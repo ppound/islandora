@@ -2,18 +2,21 @@
 
 /**
  * @file
- * Contains islandora utility functions
+ * Utility functions.
  *
  * @todo this file should be broken out into other files.
  */
 
 /**
- * Convert bytes to human readable format
+ * Convert bytes to human readable format.
  *
  * XXX: Shouldn't Drupal's format_size() be preferred?
  *
- * @param integer bytes Size in bytes to convert
+ * @param int $bytes
+ *   Size in bytes to convert
+ *
  * @return string
+ *   Human readable size.
  */
 function islandora_convert_bytes_to_human_readable($bytes, $precision = 2) {
   $kilobyte = 1024;
@@ -48,12 +51,16 @@ function islandora_control_group_to_human_readable($control_group) {
   switch ($control_group) {
     case 'M':
       return '<b>M</b>anaged';
+
     case 'X':
       return 'Inline <b>X</b>ML';
+
     case 'R':
       return '<b>R</b>edirect';
+
     case 'E':
       return '<b>E</b>xternally Referenced';
+
     default:
       return $control_group;
   }
@@ -65,7 +72,7 @@ function islandora_control_group_to_human_readable($control_group) {
  * @param string $pid
  *   The object id to check.
  *
- * @return boolean
+ * @return bool
  *   TRUE if valid, FALSE otherwise.
  */
 function islandora_is_valid_pid($pid) {
@@ -78,7 +85,7 @@ function islandora_is_valid_pid($pid) {
  * @param string $dsid
  *   The datastream id to check.
  *
- * @return boolean
+ * @return bool
  *   TRUE if valid, FALSE otherwise.
  */
 function islandora_is_valid_dsid($dsid) {
@@ -92,7 +99,8 @@ function islandora_is_valid_dsid($dsid) {
  *
  * @param string $url
  *   A url to a Fedora repository, if NULL the default is used.
- * @return
+ *
+ * @return array
  *   Returns an array describing the repository. Returns FALSE if Fedora is down
  *   or if the url is incorrect.
  */
@@ -112,29 +120,64 @@ function islandora_describe_repository($url = NULL) {
 }
 
 /**
- * Build a list of all the hooks to call.
+ * Build and invoke a list of hooks by combining the given hook and refinements.
  *
- * Concatenates the each pid (escaped) to the hook name, for calling in
- * module_invoke_all().
+ * The given hook will be called as MODULE_HOOK, and for each hook refinement
+ * as MODULE_REFINEMENT_HOOK. Any additional arguments passed to this function
+ * will be passed as arguments to module_invoke_all().
+ *
+ * @see islandora_build_hook_list()
  *
  * @param string $hook
  *   A hook to call.
- * @param array $pids
- *   An array of PIDs (probably content models).
+ * @param array $refinements
+ *   An array of strings, that will be escaped and concatinated with the given
+ *   hook. This will most likely be PIDs/DSIDs/Labels etc. We often refine our
+ *   hooks using an objects model.
+ * @param array $args
+ *   Any arguments to pass onto module_invoke_all().
  *
  * @return array
- *   An array with each PID escaped and concatenated with the base hook name,
- *   in addition to the base hook name at the end.
+ *   The merged results from all the hooks.
  */
-function islandora_build_hook_list($hook, $pids = array()) {
-  $hooks = array();
-
-  $pids = array_unique($pids);
-  foreach ($pids as $pid) {
-    $hooks[] = islandora_escape_pid_for_function($pid) . '_' . $hook;
+function islandora_invoke_hook_list($hook, array $refinements, array $args) {
+  $return = array();
+  foreach (islandora_build_hook_list($hook, $refinements) as $hook) {
+    array_unshift($args, $hook);
+    $result = call_user_func_array('module_invoke_all', $args);
+    $return = array_merge_recursive($return, $result);
+    array_shift($args);
   }
-  $hooks[] = $hook;
+  return $return;
+}
 
+/**
+ * Build a list of all the hooks to call.
+ *
+ * Concatenates each hook $refinement (escaped) to the hook name, for calling
+ * with module_invoke_all().
+ *
+ * Any non-valid PHP function characters in the given refinements are
+ * converted to "_" characters.
+ *
+ * @param string $hook
+ *   The base hook to concatenate.
+ * @param array $refinements
+ *   An array of strings, that will be escaped and concatinated with the given
+ *   hook. This will most likely be PIDs/DSIDs/Labels etc. We often refine our
+ *   hooks using an objects model.
+ *
+ * @return array
+ *   An array with each refinement escaped and concatenated with the base hook
+ *   name, in addition to the base hook name.
+ */
+function islandora_build_hook_list($hook, $refinements = array()) {
+  $refinements = array_unique($refinements);
+  $hooks = array($hook);
+  foreach ($refinements as $refinement) {
+    $refinement = preg_replace('/[^a-zA-Z0-9_]/', '_', $refinement);
+    $hooks[] = "{$refinement}_{$hook}";
+  }
   return $hooks;
 }
 
@@ -146,7 +189,7 @@ function islandora_build_hook_list($hook, $pids = array()) {
  */
 function islandora_escape_pid_for_function($pid) {
   // Apparently, case doesn't matter for function calls in PHP, so let's not
-  //   really worry about changing the case.
+  // really worry about changing the case.
   return str_replace(
     // Any PID characters which are not valid in the name of a PHP function.
     array(
@@ -181,10 +224,11 @@ function islandora_get_namespace($id) {
 }
 
 /**
- * Checks the given namespace or PID is/has an accessible namespace as defined
- * by the "islandora_pids_allowed" variable.
+ * Checks the given namespace/PID is/has an  accessible namespace.
  *
- * @param string $namespace
+ * Accessible is defined by the "islandora_pids_allowed" variable.
+ *
+ * @param string $id
  *   Either a PID or namespace to check for accessibility. Any string like those
  *   below are fine.
  *
@@ -194,7 +238,7 @@ function islandora_get_namespace($id) {
  *  'islandora:1234',
  * @endcode
  *
- * @return boolean
+ * @return bool
  *   TRUE if accessible, FALSE otherwise.
  */
 function islandora_namespace_accessible($id) {
@@ -207,8 +251,9 @@ function islandora_namespace_accessible($id) {
 }
 
 /**
- * Gets any objects that the given object has a
- * (isMemberOf, isMemberOfCollection) relationship with.
+ * Gets any objects that the given object has a parent relationship with.
+ *
+ * Parent relationships are defined as (isMemberOf, isMemberOfCollection).
  *
  * This function gets its info from the RELS-EXT directly rather than through an
  * risearch.
@@ -230,13 +275,15 @@ function islandora_get_parents_from_rels_ext(FedoraObject $object) {
     // @todo some logging would be nice, not sure what this throws.
     return array();
   }
-  $collections = array_map(function($o) { return islandora_object_load($o['object']['value']); }, $collections);
+  $map = function($o) {
+    return islandora_object_load($o['object']['value']);
+  };
+  $collections = array_map($map, $collections);
   return array_filter($collections);
 }
 
 /**
- * Checks what datastreams the object already has against its required
- * datastreams as defined by its content models, and returns their intersection.
+ * Gets the datastreams requirments that are missing.
  *
  * @param FedoraObject $object
  *   The object which models will be used to determine what datastreams it
@@ -258,20 +305,22 @@ function islandora_get_missing_datastreams_requirements(FedoraObject $object) {
 }
 
 /**
+ * Gets the required datastreams for the given object.
+ *
  * Checks the object's content model's for which datastream are expected to be
  * used with this object, as defined by the DS-COMPOSITE-MODEL datastreams.
  *
  * For duplicate datastreams in the models, the first model defines the
  * datastreams attributes regardless of what other models define.
  * This should be undefined behavior according to the documentation.
- * @see https://wiki.duraspace.org/display/FEDORA34/Fedora+Digital+Object+Model#FedoraDigitalObjectModel-ContentModelObjectCMODEL
+ *
+ * @link https://wiki.duraspace.org/display/FEDORA34/Fedora+Digital+Object+Model#FedoraDigitalObjectModel-ContentModelObjectCMODEL @endlink
+ *
+ * @see islandora_get_required_datastreams_from_content_model()
  *
  * @param FedoraObject $object
  *   The object which models will be used to determine what datastreams it
  *   should have.
- *
- * @see islandora_get_required_datastreams_from_content_model() from more
- *   details on the return value.
  *
  * @return array
  *   The DS-COMPOSITE-MODEL defined datastreams that are required for the given
@@ -300,14 +349,16 @@ function islandora_get_datastreams_requirements_from_models(array $models) {
       $dsids += islandora_get_datastreams_requirements_from_content_model($model);
     }
   }
-  // The AUDIT Datastream can not really be added, so it can't really be missing.
+  // The AUDIT Datastream can not really be added, so it can't really be
+  // missing.
   unset($dsids['AUDIT']);
   return $dsids;
 }
 
 /**
- * Checks the given content model for which datastreams are required for
- * subscribing objects, as defined by it's DS-COMPOSITE-MODEL datastream.
+ * Checks the given content model for which datastreams are required.
+ *
+ * As defined by it's DS-COMPOSITE-MODEL datastream.
  *
  * @todo Add support for fetching the schema information.
  *
@@ -344,7 +395,7 @@ function islandora_get_datastreams_requirements_from_content_model(FedoraObject 
     $dsids[$dsid] = array(
       'id' => $dsid,
       'mime' => $mime,
-      'optional' => ($optional == 'true') ? TRUE : FALSE
+      'optional' => ($optional == 'true') ? TRUE : FALSE,
     );
   }
   return $dsids;
@@ -382,7 +433,7 @@ function islandora_get_datastreams_requirements_from_content_model(FedoraObject 
 function islandora_prepare_new_object($namespace = NULL, $label = NULL, $datastreams = array(), $content_models = array(), $relationships = array()) {
   global $user;
   $tuque = islandora_get_tuque_connection();
-  $object = isset($namespace) ? $tuque->repository->constructObject($namespace) : new NewFedoraObject(NULL, $tuque->repository);
+  $object = isset($namespace) ? $tuque->repository->constructObject($namespace) : new IslandoraNewFedoraObject(NULL, $tuque->repository);
   $object->owner = isset($user->name) ? $user->name : $object->owner;
   $object->label = isset($label) ? $label : $object->label;
   foreach ($content_models as $content_model) {
@@ -396,15 +447,32 @@ function islandora_prepare_new_object($namespace = NULL, $label = NULL, $datastr
     $label = isset($ds['label']) ? $ds['label'] : '';
     $mimetype = isset($ds['mimetype']) ? $ds['mimetype'] : 'text/xml';
     // Default 'Managed'
-    $control_group = (isset($ds['control_group']) && in_array($ds['control_group'], array('X', 'M', 'R', 'E'))) ? $ds['control_group'] : 'M';
-    $datastream_file = url($ds['datastream_file'], array('absolute' => TRUE));
+    $control_group = 'M';
+    $groups = array('X', 'M', 'R', 'E');
+    if (isset($ds['control_group']) && in_array($ds['control_group'], $groups)) {
+      $control_group = $ds['control_group'];
+    }
+    $ds_uri = FALSE;
+    if (file_valid_uri($ds['datastream_file'])) {
+      $datastream_file = $ds['datastream_file'];
+      $ds_uri = TRUE;
+    }
+    else {
+      $datastream_file = url($ds['datastream_file'], array('absolute' => TRUE));
+    }
     $datastream = $object->constructDatastream($dsid, $control_group);
     $datastream->label = $label;
     $datastream->mimetype = $mimetype;
     switch ($control_group) {
       case 'M':
-        $datastream->setContentFromUrl($datastream_file);
+        if ($ds_uri) {
+          $datastream->setContentFromFile($datastream_file);
+        }
+        else {
+          $datastream->setContentFromUrl($datastream_file);
+        }
         break;
+
       case 'X':
         $datastream->setContentFromString(file_get_contents($datastream_file));
         break;
@@ -412,4 +480,155 @@ function islandora_prepare_new_object($namespace = NULL, $label = NULL, $datastr
     $object->ingestDatastream($datastream);
   }
   return $object;
+}
+
+/**
+ * Displays the repository is inaccessible message.
+ *
+ * Use anywhere we want to ensure a consitent error message when the repository
+ * is not accessible.
+ */
+function islandora_display_repository_inaccessible_message() {
+  $text = t('Islandora configuration');
+  $link = l($text, 'admin/islandora/configure', array('attributes' => array('title' => $text)));
+  $message = t('Could not connect to the repository. Please check the settings on the !link page.',
+             array('!link' => $link));
+  drupal_set_message($message, 'error', FALSE);
+}
+
+/**
+ * Create a message stating if the given executable is available.
+ *
+ * If the both the version and required version are given then only if the
+ * version is equal to or greater than the required version the executable
+ * will be considered correct.
+ *
+ * @param string $path
+ *   The absolute path to an executable to check for availability.
+ * @param string $version
+ *   The version of exectuable.
+ * @param string $required_version
+ *   The required version of exectuable.
+ *
+ * @return string
+ *   A message in html detailing if the given executable is accessible.
+ */
+function islandora_executable_available_message($path, $version = NULL, $required_version = NULL) {
+  $available = is_executable($path);
+  if ($available) {
+    $image = theme_image(array('path' => 'misc/watchdog-ok.png', 'attributes' => array()));
+    $message = t('Executable found at @path', array('@path' => $path));
+    if ($version) {
+      $message .= t('<br/>Version: @version', array('@version' => $version));
+    }
+    if ($required_version) {
+      $message .= t('<br/>Required Version: @version', array('@version' => $required_version));
+      if (version_compare($version, $required_version) < 0) {
+        $image = theme_image(array('path' => 'misc/watchdog-error.png', 'attributes' => array()));
+      }
+    }
+  }
+  else {
+    $image = theme_image(array('path' => 'misc/watchdog-error.png', 'attributes' => array()));
+    $message = t('Unable to locate executable at @path', array('@path' => $path));
+  }
+  return $image . $message;
+}
+
+/**
+ * Create a message stating if the given directory exists.
+ *
+ * @param string $path
+ *   The absolute path to an executable to check for availability.
+ *
+ * @return string
+ *   A message in HTML detailing if the given directory is exists.
+ */
+function islandora_directory_exists_message($path) {
+  $available = is_dir($path);
+  if ($available) {
+    $image = theme_image(array('path' => 'misc/watchdog-ok.png', 'attributes' => array()));
+    $message = t('Directory found at @path', array('@path' => $path));
+  }
+  else {
+    $image = theme_image(array('path' => 'misc/watchdog-error.png', 'attributes' => array()));
+    $message = t('Unable to locate directory at @path', array('@path' => $path));
+  }
+  return $image . $message;
+}
+
+/**
+ * Gets the default value for the given system_settings_form() element.
+ *
+ * Checks the $form_state for the default value if not it checks variable_get().
+ * Assumes #tree is FALSE. This is only really required for elements that utilize
+ * AJAX, as their value can change before the submit actually takes place.
+ *
+ * @param string $name
+ *   The name of the system settings form element.
+ * @param mixed $default_value
+ *   The default value for the system settings form element.
+ * @param array $form_state
+ *   The Drupal form state.
+ *
+ * @return mixed
+ *   The default value for use in a the system_settings_form().
+ */
+function islandora_system_settings_form_default_value($name, $default_value, array &$form_state) {
+  return isset($form_state['values'][$name]) ? $form_state['values'][$name] : variable_get($name, $default_value);
+}
+
+/**
+ * Returns basic information about DS-COMPOSITE-MODEL
+ *
+ * @param string $pid
+ *  pid of content model containing DS_COMP stream
+ * @return array
+ *   array of values in the following form
+ *
+ * [DC] => Array
+ *       (
+ *           [mimetype] => text/xml
+ *       )
+ *
+ *   [MODS] => Array
+ *       (
+ *           [optional] => true
+ *           [mimetype] => text/xml
+ *       )
+ *
+ *   [RELS-EXT] => Array
+ *       (
+ *           [mimetype] => application/rdf+xml
+ *       )
+ *
+ *   [RELS-INT] => Array
+ *       (
+ *           [optional] => true
+ *           [mimetype] => application/rdf+xml
+ *      )
+ *
+ */
+
+function islandora_get_comp_ds_mappings($pid) {
+  $cm_object = islandora_object_load($pid);
+  if (!isset($cm_object) || !isset($cm_object['DS-COMPOSITE-MODEL'])) {
+    return FALSE;
+  }
+  $datastream = $cm_object['DS-COMPOSITE-MODEL'];
+  $ds_comp_stream = $datastream->content;
+  $sxml = new SimpleXMLElement($ds_comp_stream);
+  $mappings = array();
+  foreach ($sxml->dsTypeModel as $ds) {
+    $dsid = (string) $ds['ID'];
+    $optional = (string) $ds['optional'];
+    foreach ($ds->form as $form) {
+      $mime = (string) $form['MIME'];
+      if ($optional) {
+        $mappings[$dsid]['optional'] = $optional;
+      }
+      $mappings[$dsid]['mimetype'] = $mime;
+    }
+  }
+  return $mappings;
 }

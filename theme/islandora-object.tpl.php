@@ -2,6 +2,7 @@
 
 /**
  * @file
+ * The default object view.
  *
  * This is a template for objects that do not have a module to registered to
  * build their display.
@@ -55,13 +56,8 @@
  * foreach ($object as $ds) {
  * do something here
  * }
- *
  */
 ?>
-<?php if (isset($islandora_object_label)): ?>
-  <?php drupal_set_title("$islandora_object_label"); ?>
-<?php endif; ?>
-
 <div class="islandora-object islandora">
   <h2><?php print t('Details'); ?></h2>
   <dl class="islandora-object-tn">
