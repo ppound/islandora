@@ -36,25 +36,16 @@ function islandora_repository_admin($form, &$form_state) {
     $info = FALSE;
   }
 
-  if ($info) {
-    try {
-      $dc = $connection->api->m->getDatastream('fedora-system:ContentModel-3.0', 'DC');
-    }
-    catch (RepositoryException $e) {
-      $dc = FALSE;
-    }
-  }
+  
 
   if ($info) {
-    if ($dc) {
+    
       $confirmation_message = '<img src="' . url('misc/watchdog-ok.png') . '"/>'
-        . t('Successfully connected to Fedora Server (Version !version).', array('!version' => $info['repositoryVersion']));
-    }
-    else {
-      $confirmation_message = '<img src="' . url('misc/watchdog-warning.png') . '"/>'
-        . t('Unable to authenticate when connecting to to Fedora Server (Version !version). Please configure the !filter.', array('!version' => $info['repositoryVersion'], '!filter' => 'Drupal Filter'));
-    }
-  }
+        . t('Successfully connected to Fedora Server (Version !version). with !objects objects and a size of !size_of', array('!version' => $info['repositoryVersion']
+          , '!objects' => $info['numberOfObjects'], '!size_of' => $info['repositorySize'] ));
+   
+      }
+ 
   else {
     $confirmation_message = '<img src="' . url('misc/watchdog-error.png') . '"/> '
       . t('Unable to connect to Fedora server at !islandora_url', array('!islandora_url' => $url));
